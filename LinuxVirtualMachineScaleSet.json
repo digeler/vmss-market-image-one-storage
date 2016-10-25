@@ -1,0 +1,186 @@
+﻿{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01-preview/deploymentTemplate.json",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmSku": {
+      "type": "string",
+      "defaultValue": "Standard_A1",
+      "metadata": {
+        "description": "Size of VMs in the VM Scale Set."
+      }
+    },
+    "windowsOSVersion": {
+      "type": "string",
+      "defaultValue": "2012-R2-Datacenter",
+      "allowedValues": [
+        "2008-R2-SP1",
+        "2012-Datacenter",
+        "2012-R2-Datacenter",
+        "2016-Datacenter"
+      ],
+      "metadata": {
+        "description": "The Windows version for the VM. This will pick a fully patched image of this given Windows version. Allowed values: 2008-R2-SP1, 2012-Datacenter, 2012-R2-Datacenter."
+      }
+    },
+    "vmssName": {
+      "type": "string",
+      "defaultValue": "dubrri",
+      "metadata": {
+        "description": "String used as a base for naming resources. Must be 3-61 characters in length and globally unique across Azure. A hash is prepended to this string for some resources, and resource-specific information is appended."
+      },
+      "maxLength": 61
+    },
+    "instanceCount": {
+      "type": "int",
+      "defaultValue": 1,
+      "metadata": {
+        "description": "Number of VM instances (100 or less)."
+      },
+      "maxValue": 100
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "dinor",
+      "metadata": {
+        "description": "Admin username on all VMs."
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "defaultValue": "Corp123!!!!!",
+      "metadata": {
+        "description": "Admin password on all VMs."
+      }
+    }
+  },
+  "variables": {
+    "storageAccountType": "Standard_LRS",
+    "namingInfix": "[toLower(substring(concat(parameters('vmssName'), uniqueString(resourceGroup().id)), 0, 9))]",
+    "longNamingInfix": "[toLower(parameters('vmssName'))]",
+    "newStorageAccountSuffix": "[concat(variables('namingInfix'), 'sa')]",
+    "uniqueStringArray": [
+      "[concat(uniqueString(concat(resourceGroup().id, variables('newStorageAccountSuffix'), '0')))]",
+      "[concat(uniqueString(concat(resourceGroup().id, variables('newStorageAccountSuffix'), '1')))]",
+      "[concat(uniqueString(concat(resourceGroup().id, variables('newStorageAccountSuffix'), '2')))]",
+      "[concat(uniqueString(concat(resourceGroup().id, variables('newStorageAccountSuffix'), '3')))]",
+      "[concat(uniqueString(concat(resourceGroup().id, variables('newStorageAccountSuffix'), '4')))]"
+    ],
+    
+    "vhdContainerName": "vhds",
+    "osDiskName": "myosdisk",
+    "addressPrefix": "10.0.0.0/16",
+    "subnetPrefix": "10.0.0.0/24",
+    "virtualNetworkName": "newvnet",
+    "publicIPAddressName": "[concat(variables('namingInfix'), 'pip')]",
+    "subnetName": "default",
+    "loadBalancerName": "[concat(variables('namingInfix'), 'lb')]",
+    "publicIPAddressID": "[resourceId('Microsoft.Network/publicIPAddresses',variables('publicIPAddressName'))]",
+    "lbID": "[resourceId('Microsoft.Network/loadBalancers',variables('loadBalancerName'))]",
+    "natPoolName": "[concat(variables('namingInfix'), 'natpool')]",
+    "bePoolName": "[concat(variables('namingInfix'), 'bepool')]",
+    "natStartPort": 50000,
+    "natEndPort": 50119,
+    "natBackendPort": 3389,
+    "nicName": "[concat(variables('namingInfix'), 'nic')]",
+    "ipConfigName": "[concat(variables('namingInfix'), 'ipconfig')]",
+    "frontEndIPConfigID": "[concat(variables('lbID'),'/frontendIPConfigurations/loadBalancerFrontEnd')]",
+    "osType": {
+      "publisher": "MicrosoftWindowsServer",
+      "offer": "WindowsServer",
+      "sku": "[parameters('windowsOSVersion')]",
+      "version": "latest"
+    },
+    "imageReference": "[variables('osType')]",
+    "virtualNetworkID": "[resourceId('Microsoft.Network/virtualNetworks',variables('virtualNetworkName'))]",
+    "appGwPublicIPAddressName": "[concat(variables('namingInfix'), 'appGwPip')]",
+    "appGwName": "[concat(variables('namingInfix'), 'appGw')]",
+    "appGwPublicIPAddressID": "[resourceId('Microsoft.Network/publicIPAddresses',variables('appGwPublicIPAddressName'))]",
+    "appGwID": "[resourceId('Microsoft.Network/applicationGateways',variables('appGwName'))]",
+    "appGwSubnetName": "[concat(variables('namingInfix'),'appGwSubnet')]",
+    "appGwSubnetPrefix": "10.0.1.0/24",
+    "appGwSubnetID": "[concat(variables('virtualNetworkID'),'/subnets/',variables('appGwSubnetName'))]",
+    "appGwFrontendPort": 80,
+    "appGwBackendPort": 80,
+    "appGwBePoolName": "[concat(variables('namingInfix'), 'appGwBepool')]",
+    "computeApiVersion": "2016-03-30",
+    "networkApiVersion": "2016-03-30",
+    "storageApiVersion": "2015-06-15"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "name": "[variables('publicIPAddressName')]",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "[variables('networkApiVersion')]",
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic",
+        "dnsSettings": {
+          "domainNameLabel": "[variables('longNamingInfix')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachineScaleSets",
+      "name": "[variables('namingInfix')]",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "[variables('computeApiVersion')]",
+      "dependsOn": [
+        
+      ],
+      "sku": {
+        "name": "[parameters('vmSku')]",
+        "tier": "Standard",
+        "capacity": "[parameters('instanceCount')]"
+      },
+      "properties": {
+        "overprovision": "true",
+        "upgradePolicy": {
+          "mode": "Manual"
+        },
+        "virtualMachineProfile": {
+          "storageProfile": {
+            "osDisk": {
+              "vhdContainers": [
+                "https://amine8640.blob.core.windows.net/vhds"
+              ],
+              "name": "[variables('osDiskName')]",
+              "caching": "ReadOnly",
+              "createOption": "FromImage"
+            },
+            "imageReference": "[variables('imageReference')]"
+          },
+          "osProfile": {
+            "computerNamePrefix": "[variables('namingInfix')]",
+            "adminUsername": "[parameters('adminUsername')]",
+            "adminPassword": "[parameters('adminPassword')]",
+            "windowsConfiguration": {
+              "enableAutomaticUpdates": false // Must be done manually to ensure that not all machines reboot at the same time
+            }
+          },
+         
+          "networkProfile": {
+            "networkInterfaceConfigurations": [
+              {
+                "name": "[variables('nicName')]",
+                "properties": {
+                  "primary": "true",
+                  "ipConfigurations": [
+                    {
+                      "name": "[variables('ipConfigName')]",
+                      "properties": {
+                        "subnet": {
+                          "id": "[concat('/subscriptions/', subscription().subscriptionId,'/resourceGroups/', resourceGroup().name, '/providers/Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'), '/subnets/', variables('subnetName'))]"
+                        }
+                        
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
